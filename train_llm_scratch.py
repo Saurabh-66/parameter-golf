@@ -539,7 +539,7 @@ class GPT(nn.Module):
 # Muon Optimizer
 # ─────────────────────────────────────────────────────────────────────────────
 
-@torch.compile
+#@torch.compile
 def newton_schulz_5(G: torch.Tensor, steps: int = 5) -> torch.Tensor:
     """
     Newton-Schulz iteration to compute the orthogonal factor of a matrix.
