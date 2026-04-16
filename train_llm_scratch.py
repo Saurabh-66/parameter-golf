@@ -914,6 +914,7 @@ def train(cfg: Config):
     # FIRST forward pass and takes 60-120s on a Hopper GPU.
     # We trigger a full warmup step HERE, before train_start, so compilation
     # time does NOT eat into the 30-minute training budget.
+    '''
     print("\nCompiling + warming up torch.compile (first run triggers JIT, ~60-120s)...")
     _init_state = {n: p.data.clone() for n, p in model.named_parameters()}
     compiled_model = torch.compile(model, dynamic=True)
@@ -935,6 +936,9 @@ def train(cfg: Config):
         p.data.copy_(_init_state[n])
     del _init_state, _wx, _wy, _wloss, _all_params
     print("  Compilation warmup done.")
+    '''
+    compiled_model = model
+    print("  torch.compile skipped (MIG slice — running in eager mode)")
 
     # ── Optimizers ───────────────────────────────────────────────────────────
     # Separate parameter groups:
