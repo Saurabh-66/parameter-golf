@@ -916,7 +916,7 @@ def train(cfg: Config):
     # time does NOT eat into the 30-minute training budget.
     print("\nCompiling + warming up torch.compile (first run triggers JIT, ~60-120s)...")
     _init_state = {n: p.data.clone() for n, p in model.named_parameters()}
-    compiled_model = torch.compile(model, dynamic=False, fullgraph=True)
+    compiled_model = torch.compile(model, dynamic=True)
     # Run one full warmup step (forward + backward + optimizer step)
     _wx, _wy = train_loader.next_batch(device)
     _all_params = list(model.parameters())
