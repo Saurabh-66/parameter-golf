@@ -757,6 +757,7 @@ def evaluate(
 
     context_size = seq_len - stride   # tokens used as context (not scored)
 
+    '''
     for ws in window_starts:
         we   = ws + seq_len
         toks = val_tokens[ws : we + 1].to(device=device, dtype=torch.long)
@@ -784,6 +785,33 @@ def evaluate(
         tb = base_bytes_lut[scored_tgts].double()
         tb += (has_lead_space_lut[scored_tgts] & ~is_boundary_lut[scored_prev]).double()
         total_bytes += tb.sum()
+    '''
+    batch_seqs  = 32
+    window_list = list(window_starts)
+    for bi in range(0, len(window_list), batch_seqs):
+        batch_ws = window_list[bi : bi + batch_seqs]
+        bsz = len(batch_ws)
+        x_batch = torch.zeros(bsz, seq_len, dtype=torch.long, device=device)
+        y_batch = torch.zeros(bsz, seq_len, dtype=torch.long, device=device)
+        for i, ws in enumerate(batch_ws):
+            toks = val_tokens[ws : ws + seq_len + 1].to(device=device, dtype=torch.long)
+            x_batch[i, :seq_len] = toks[:seq_len]
+            y_batch[i, :seq_len] = toks[1:seq_len+1]
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            logits = model(x_batch)
+        for i, ws in enumerate(batch_ws):
+            score_start   = 0 if ws == 0 else context_size
+            scored_logits = logits[i, score_start:, :]
+            scored_tgts   = y_batch[i, score_start:]
+            scored_prev   = x_batch[i, score_start:]
+            nll = F.cross_entropy(
+                scored_logits.float(), scored_tgts, reduction="none"
+            )
+            total_loss   += nll.sum().double()
+            total_tokens += scored_tgts.numel()
+            tb = base_bytes_lut[scored_tgts].double()
+            tb += (has_lead_space_lut[scored_tgts] & ~is_boundary_lut[scored_prev]).double()
+            total_bytes  += tb.sum()
 
     val_loss = (total_loss / total_tokens).item()      # nats per token
     val_bpb  = (val_loss / math.log(2)) * (total_tokens / total_bytes).item()
@@ -895,6 +923,7 @@ def train(cfg: Config):
 
     print("\nLoading validation data...")
     val_tokens = load_val_tokens(cfg.val_files, cfg.val_seq_len).to(device)
+    val_tokens = val_tokens[:2_000_000]  # cap for fast eval on MIG slice
     print(f"  Val tokens: {val_tokens.numel():,}")
 
     # ── Model ────────────────────────────────────────────────────────────────
@@ -973,11 +1002,14 @@ def train(cfg: Config):
     print(f"{'─'*60}")
 
     # Run initial validation (step 0, untrained model)
+    '''
     val_metrics = evaluate(model, val_tokens, base_bytes_lut, has_lead_space_lut,
                            is_boundary_lut, cfg, device)
     print(f"  {'0':>6}  {'—':>10}  {val_metrics['val_loss']:>10.4f}  "
           f"{val_metrics['val_bpb']:>8.4f}  {'—':>8}  {'—':>6}  {'—':>8}   [initial]")
     logger.log(type="val", step=0, **val_metrics)
+    '''
+    print(f"  {'0':>6}  [skipping initial eval — first val at step {cfg.val_every_steps}]")
 
     step           = 0
     train_start    = time.perf_counter()
