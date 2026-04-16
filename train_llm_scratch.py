@@ -287,11 +287,15 @@ class RotaryEmbedding(nn.Module):
 
     @torch.no_grad()
     def get_cos_sin(self, seq_len: int, device: torch.device, dtype: torch.dtype):
-        t      = torch.arange(seq_len, device=device, dtype=self.inv_freq.dtype)
-        freqs  = torch.outer(t, self.inv_freq)          # (T, rope_dims/2)
-        emb    = torch.cat([freqs, freqs], dim=-1)      # (T, rope_dims)
-        return emb.cos()[None, :, None, :].to(dtype), emb.sin()[None, :, None, :].to(dtype)
-        # shapes: (1, T, 1, rope_dims) — broadcast over batch and heads
+        t     = torch.arange(seq_len, device=device, dtype=self.inv_freq.dtype)
+        freqs = torch.outer(t, self.inv_freq)   # (T, rope_dims/2)
+        # Return cos/sin of shape (1, T, 1, rope_dims/2) — do NOT cat([freqs,freqs]).
+        # In forward(), x1 and x2 are each sliced to rope_dims/2 dims, so cos/sin
+        # must also have rope_dims/2 in the last dimension to broadcast correctly.
+        # (The cat trick is only needed if you store the full rotation in one tensor;
+        # here we reconstruct [x1*cos-x2*sin, x1*sin+x2*cos] explicitly.)
+        return freqs.cos()[None, :, None, :].to(dtype), freqs.sin()[None, :, None, :].to(dtype)
+        # shapes: (1, T, 1, rope_dims/2) — broadcast over batch and heads
 
     def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
         """
