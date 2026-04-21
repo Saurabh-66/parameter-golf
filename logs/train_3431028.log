@@ -1,0 +1,119 @@
+============================================================
+ Job: 3431028  Node: saxa
+ Start: Tue 21 Apr 10:44:30 BST 2026
+============================================================
+
+--- Environment ---
+Python 3.11.15
+PyTorch: 2.6.0+cu124
+CUDA:    12.4
+GPU:     NVIDIA H200 MIG 1g.18gb
+NVIDIA H200, 143771 MiB, 136329 MiB
+-------------------
+
+
+============================================================
+  LLM Training from Scratch
+============================================================
+  Device:   cuda (NVIDIA H200 MIG 1g.18gb)
+  CUDA:     12.4
+  PyTorch:  2.6.0+cu124
+  Max time: 30 minutes
+============================================================
+
+Loading tokenizer...
+  Vocab size: 1024
+
+Loading training data...
+  DataLoader: found 4 shards, batch_size=32 seqs
+  Total tokens: 400,000,000
+
+Loading validation data...
+  Val tokens: 2,000,000
+
+Building model...
+  Parameters: 18.10M
+  Architecture: 8L × 384d × 6H/3KVH
+  Model size (BF16): 36.2 MB
+  torch.compile skipped (MIG slice — running in eager mode)
+
+Optimizer setup:
+  Muon  params: 17.69M (2D weight matrices)
+  AdamW params: 0.40M (embeddings, norms)
+
+Estimated steps in 30 min: ~5,389
+Training tokens: ~177M
+
+────────────────────────────────────────────────────────────
+    step  train_loss    val_loss   val_bpb     tok/s     MFU        lr
+────────────────────────────────────────────────────────────
+       0  [skipping initial eval — first val at step 500]
+     500      3.4594      7.1488    4.2837     97680   0.482  3.00e-03  [4.6min, 336ms/step]
+    1000      2.8110      6.2069    3.7193     97723   0.482  3.00e-03  [9.2min, 336ms/step]
+    1500      2.8324      5.8086    3.4806     97619   0.482  3.00e-03  [13.8min, 338ms/step]
+    2000      2.7287      5.5929    3.3514     97478   0.481  3.00e-03  [18.3min, 336ms/step]
+    2500      2.6514      5.4478    3.2644     97779   0.483  3.00e-03  [22.9min, 337ms/step]
+    3000      2.4856      5.3669    3.2160     97798   0.483  2.05e-03  [27.4min, 335ms/step]
+
+  Time limit reached (30 min). Stopping.
+
+============================================================
+  Training complete: 3460 steps in 30.0 min
+  Avg step time: 520ms
+  Total tokens seen: 113.4M
+============================================================
+
+Applying EMA weights and running final evaluation...
+
+  FINAL val_loss: 5.408701 nats
+  FINAL val_bpb:  3.240996
+
+  Context:
+    Random model:      ~8.0 bpb  (no learning)
+    Our model:          3.241 bpb
+    Param-golf baseline: 1.224 bpb (9L-512d, 10min 8xH100)
+    Param-golf SOTA:     1.081 bpb (11L-512d, 10min 8xH100 + tricks)
+
+  Checkpoint saved: checkpoints/final_model.pt
+
+============================================================
+  INFERENCE DEMO
+============================================================
+
+  Prompt: "The history of artificial intelligence"
+  Generated: ence with the go go go through, and cututututututututututavavavavavavasonasonasonasonasonasonason ( ( (INNNSSWWWWWW37777665888 m m m menenenenenenamamamamamamiiiototototototususususuuupportpportpport te Firstrrick
+
+  Prompt: "In recent years, machine learning has"
+  Generated: has also produ produicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsicsics ###########pppppyyyy In In In PE&&&&&&&AAAZZZZZZZZZZZZZZZZZZZZZZZMS
+
+  Prompt: "Scientists have discovered that"
+  Generated: these these our our our our our our our our our our our our our our our our our our our our our our our our our our our our our our our our our our our our our more more in pr pr primimimimimatedatedatedatedatedatedatedatedatedersersersersersers from from from from from from their their their their their their their their people people people people people————————————————
+
+============================================================
+  Log file: logs/training_log_3431028.jsonl
+  Checkpoint: checkpoints/final_model.pt
+============================================================
+
+
+============================================================
+ Training finished — exit code: 0
+ End: Tue 21 Apr 11:18:10 BST 2026
+============================================================
+
+Generating plots...
+Loading log: logs/training_log_3431028.jsonl
+  Train events: 346
+  Val events:   6
+  X-axis mode:  step
+
+Generating plots...
+  Saved: plots/run_3431028/training_dashboard_step.png
+  Saved: plots/run_3431028/val_bpb_step.png
+  Saved: plots/run_3431028/loss_curves_step.png
+  Saved: plots/run_3431028/optimizer_diagnostics_step.png
+
+  All plots saved to: plots/run_3431028/
+
+Slurm log:     logs/train_3431028.log
+JSONL metrics: logs/training_log_3431028.jsonl
+Checkpoint:    checkpoints/final_model.pt
