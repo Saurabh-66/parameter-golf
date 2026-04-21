@@ -993,7 +993,7 @@ def train(cfg: Config):
     # ── Training ─────────────────────────────────────────────────────────────
     # Estimate total steps from time budget
     # We'll run until time runs out; the step count is just for LR schedule
-    estimated_step_ms = 200    # conservative estimate for H200 MIG with this model
+    estimated_step_ms = 334 #200    # conservative estimate for H200 MIG with this model
     estimated_steps   = int(cfg.max_train_seconds * 1000 / estimated_step_ms)
     print(f"\nEstimated steps in {cfg.max_train_seconds/60:.0f} min: ~{estimated_steps:,}")
     print(f"Training tokens: ~{estimated_steps * cfg.batch_tokens / 1e6:.0f}M\n")

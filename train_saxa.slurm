@@ -49,7 +49,7 @@ mkdir -p logs checkpoints plots
 # saxa H200 MIG (1g.16gb): 16GB VRAM, Hopper arch, CUDA 13.0
 # batch_tokens=32768 (32 seqs × 1024) fits in 16GB
 # Hopper supports torch.compile + BF16 natively
-python train_llm_scratch.py \
+python -u train_llm_scratch.py \
     --data_dir           ./data \
     --log_file           logs/training_log_${SLURM_JOB_ID}.jsonl \
     --checkpoint_dir     checkpoints \
@@ -61,7 +61,7 @@ python train_llm_scratch.py \
     --num_kv_heads       3 \
     --batch_tokens       32768 \
     --peak_lr            3e-3 \
-    --val_every_steps    100
+    --val_every_steps    500
 
 EXIT_CODE=$?
 echo ""
