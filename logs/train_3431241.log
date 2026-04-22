@@ -1,0 +1,113 @@
+============================================================
+ Job: 3431241  Node: saxa
+ Start: Tue 21 Apr 15:22:22 BST 2026
+============================================================
+
+--- Environment ---
+Python 3.11.15
+PyTorch: 2.6.0+cu124
+CUDA:    12.4
+GPU:     NVIDIA H200 MIG 1g.18gb
+NVIDIA H200, 143771 MiB, 136329 MiB
+-------------------
+
+
+============================================================
+  LLM Training from Scratch
+============================================================
+  Device:   cuda (NVIDIA H200 MIG 1g.18gb)
+  CUDA:     12.4
+  PyTorch:  2.6.0+cu124
+  Max time: 900 minutes
+============================================================
+
+Loading tokenizer...
+  Vocab size: 1024
+
+Loading training data...
+  DataLoader: found 50 shards, batch_size=32 seqs
+  Total tokens: 5,000,000,000
+
+Loading validation data...
+  Val tokens: 2,000,000
+
+Building model...
+  Parameters: 18.10M
+  Architecture: 8L × 384d × 6H/3KVH
+  Model size (BF16): 36.2 MB
+  torch.compile skipped (MIG slice — running in eager mode)
+
+Optimizer setup:
+  Muon  params: 17.69M (2D weight matrices)
+  AdamW params: 0.40M (embeddings, norms)
+
+Estimated steps in 900 min: ~161,676
+Training tokens: ~5298M
+
+────────────────────────────────────────────────────────────
+    step  train_loss    val_loss   val_bpb     tok/s     MFU        lr
+────────────────────────────────────────────────────────────
+       0  [skipping initial eval — first val at step 999999]
+
+  Time limit reached (900 min). Stopping.
+
+============================================================
+  Training complete: 90031 steps in 1067.4 min
+  Avg step time: 711ms
+  Total tokens seen: 2950.1M
+============================================================
+
+Applying EMA weights and running final evaluation...
+
+  FINAL val_loss: 5.278767 nats
+  FINAL val_bpb:  3.163138
+
+  Context:
+    Random model:      ~8.0 bpb  (no learning)
+    Our model:          3.163 bpb
+    Param-golf baseline: 1.224 bpb (9L-512d, 10min 8xH100)
+    Param-golf SOTA:     1.081 bpb (11L-512d, 10min 8xH100 + tricks)
+
+  Checkpoint saved: checkpoints/final_model.pt
+
+============================================================
+  INFERENCE DEMO
+============================================================
+
+  Prompt: "The history of artificial intelligence"
+  Generated: finad beausual, andan moveoveoveebbjectiasas ii mill storyory wavavavavases at stillillandoririagosalesesesed and steemeduililoriiienenenenuny : normoii spellellusususususususomirreststusususussamamam
+
+  Prompt: "In recent years, machine learning has"
+  Generated: has also produ producteses for depurururururririitor to the drts of of splimalal ch ch chaseaseasculeananningttopolollininffactactory inanananasy ro roseresting mememememo foodiiii groualtation and mausolestestoreinanasororgg
+
+  Prompt: "Scientists have discovered that"
+  Generated: are unemmmoreuraacatatationing the firstnnnssilatororororchitititisisplplicirirusususususilian staaelssururanttttts giriririrttemememusususususususicalnnchrtatyyaeaaalal bathiier andalalingan
+
+============================================================
+  Log file: logs/training_log_3431241.jsonl
+  Checkpoint: checkpoints/final_model.pt
+============================================================
+
+
+============================================================
+ Training finished — exit code: 0
+ End: Wed 22 Apr 09:18:00 BST 2026
+============================================================
+
+Generating plots...
+Loading log: logs/training_log_3431241.jsonl
+  Train events: 9004
+  Val events:   0
+  X-axis mode:  step
+
+Generating plots...
+  Saved: plots/run_3431241/training_dashboard_step.png
+  Saved: plots/run_3431241/val_bpb_step.png
+  Saved: plots/run_3431241/loss_curves_step.png
+  Saved: plots/run_3431241/optimizer_diagnostics_step.png
+
+  All plots saved to: plots/run_3431241/
+
+Slurm log:     logs/train_3431241.log
+JSONL metrics: logs/training_log_3431241.jsonl
+Checkpoint:    checkpoints/final_model.pt
