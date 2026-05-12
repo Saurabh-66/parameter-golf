@@ -1005,7 +1005,7 @@ python -u train_llm_scratch.py \
 
 ## 13. Known Issues and Fixes Applied
 
-### Bug 1 — RoPE Shape Mismatch (all early jobs crashed immediately)
+### Bug 1 - RoPE Shape Mismatch (all early jobs crashed immediately)
 
 **Error:** `TorchRuntimeError: Attempting to broadcast dimension of length 32 at -1. Mismatching: size=(1, 1024, 1, 32) vs broadcastable to (32, 1024, 6, 16)`
 
@@ -1013,25 +1013,25 @@ python -u train_llm_scratch.py \
 
 **Fix:** Removed `cat()` - return `freqs.cos()[None, :, None, :]` with shape `(1, T, 1, rope_dims/2)`.
 
-### Bug 2 — `torch.compile(fullgraph=True)` hung for 45+ minutes
+### Bug 2 - `torch.compile(fullgraph=True)` hung for 45+ minutes
 
 **Symptom:** Single warning line `Not enough SMs to use max_autotune_gemm mode`, then nothing for 45+ minutes until Slurm time limit killed the job.
 
 **Fix:** `compiled_model = model`. Skip compilation entirely. Still achieves 48.4% MFU via FlashAttention-3 in eager mode.
 
-### Bug 3 — `@torch.compile` decorator on `newton_schulz_5` spawned hanging workers
+### Bug 3 - `@torch.compile` decorator on `newton_schulz_5` spawned hanging workers
 
 **Symptom:** Even after removing the main compile block, jobs hung for 20+ minutes showing `torch/_inductor/compile_worker` subprocesses.
 
 **Fix:** Removed `@torch.compile` decorator from the `newton_schulz_5` function.
 
-### Bug 4 — Step-0 validation timed out (120+ min evaluation)
+### Bug 4 - Step-0 validation timed out (120+ min evaluation)
 
 **Symptom:** After data loading, training appeared to hang - actually running evaluation over 115M validation tokens with batch_size=1.
 
 **Fix:** Skip step-0 eval. Cap val tokens to 2M. Batch the sliding window loop (batch_seqs=32).
 
-### Bug 5 — Warmdown started too late (LR anomaly)
+### Bug 5 - Warmdown started too late (LR anomaly)
 
 **Symptom:** LR stayed at peak 3e-3 until step 1210 instead of starting at step ~915.
 
@@ -1039,11 +1039,11 @@ python -u train_llm_scratch.py \
 
 **Fix for next run:** Add `--estimated_step_ms 334` to slurm script.
 
-### Bug 6 — Python stdout buffering (.log shows nothing until job ends)
+### Bug 6 - Python stdout buffering (.log shows nothing until job ends)
 
 **Fix:** Add `-u` flag: `python -u train_llm_scratch.py`
 
-### Bug 7 — Wrong dataset (FineWeb-Edu instead of FineWeb)
+### Bug 7 - Wrong dataset (FineWeb-Edu instead of FineWeb)
 
 **Root cause:** Custom download script used `HuggingFaceFW/fineweb-edu` (filtered educational subset) instead of `HuggingFaceFW/fineweb` (the actual challenge dataset).
 
