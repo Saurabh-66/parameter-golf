@@ -77,7 +77,7 @@ This fetches pre-tokenized shards from `kevclark/parameter-golf` on HuggingFace 
 
 ---
 
-## 2. The Tokenizer — SentencePiece BPE
+## 2. The Tokenizer - SentencePiece BPE
 
 ### What is Tokenization?
 
