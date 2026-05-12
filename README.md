@@ -1,24 +1,24 @@
-# Training an LLM from Scratch — End-to-End Guide
+# Training an LLM from Scratch - End-to-End Guide
 
 **A complete walkthrough: FineWeb dataset → decoder-only transformer → Muon optimizer → val_bpb → checkpoint → inference → SOTA comparison**
 
-> This repository trains an 18.1M-parameter GPT-style language model from scratch on the FineWeb dataset using the [OpenAI Parameter Golf](https://github.com/openai/parameter-golf) evaluation protocol. Every component is documented below — architecture, data pipeline, training loop, evaluation metric, inference, and how it compares to production-scale models like GPT-4, Claude, and LLaMA.
+> This repository trains an 18.1M-parameter GPT-style language model from scratch on the FineWeb dataset using the [OpenAI Parameter Golf](https://github.com/openai/parameter-golf) evaluation protocol. Every component is documented below - architecture, data pipeline, training loop, evaluation metric, inference, and how it compares to production-scale models like GPT-4, Claude, and LLaMA.
 
 ---
 
 ## Table of Contents
 
-1. [The Dataset — FineWeb](#1-the-dataset--fineweb)
-2. [The Tokenizer — SentencePiece BPE](#2-the-tokenizer--sentencepiece-bpe)
-3. [Model Architecture — Complete Component Guide](#3-model-architecture--complete-component-guide)
+1. [The Dataset - FineWeb](#1-the-dataset--fineweb)
+2. [The Tokenizer - SentencePiece BPE](#2-the-tokenizer--sentencepiece-bpe)
+3. [Model Architecture - Complete Component Guide](#3-model-architecture--complete-component-guide)
 4. [Training Pipeline](#4-training-pipeline)
 5. [The Muon Optimizer](#5-the-muon-optimizer)
-6. [Evaluation Metric — val_bpb](#6-evaluation-metric--valbpb)
+6. [Evaluation Metric - val_bpb](#6-evaluation-metric--valbpb)
 7. [Training Script Walkthrough](#7-training-script-walkthrough)
 8. [Inference](#8-inference)
 9. [Logs and Monitoring](#9-logs-and-monitoring)
-10. [This Run — Complete Results Analysis](#10-this-run--complete-results-analysis)
-11. [SOTA Comparison — Market Context](#11-sota-comparison--market-context)
+10. [This Run - Complete Results Analysis](#10-this-run--complete-results-analysis)
+11. [SOTA Comparison - Market Context](#11-sota-comparison--market-context)
 12. [Hardware and Slurm Cluster Guide](#12-hardware-and-slurm-cluster-guide)
 13. [Known Issues and Fixes Applied](#13-known-issues-and-fixes-applied)
 14. [Repository Layout](#14-repository-layout)
@@ -27,7 +27,7 @@
 
 ---
 
-## 1. The Dataset — FineWeb
+## 1. The Dataset - FineWeb
 
 ### What is FineWeb?
 
@@ -36,11 +36,11 @@
 - **Source:** CommonCrawl web crawls from 2013–2024 (96 snapshots)
 - **Processing pipeline:** URL filtering → language detection (fastText) → quality heuristics → MinHash deduplication (5-gram, 14×8 hash) → PII (Personally Identifiable Information) scrubbing
 - **Size:** 18.5 trillion tokens (original), ~15T after filtering
-- **Format:** English-only, diverse domains — news, Wikipedia, forums, code, academic text, recipes
+- **Format:** English-only, diverse domains - news, Wikipedia, forums, code, academic text, recipes
 
 ### Why This Dataset for LLM Training?
 
-Unlike domain-specific datasets, FineWeb contains the full breadth of human writing on the internet. A language model trained on it learns general English — not just encyclopedic prose or programming syntax. This diversity is what makes models generalise to arbitrary prompts.
+Unlike domain-specific datasets, FineWeb contains the full breadth of human writing on the internet. A language model trained on it learns general English - not just encyclopedic prose or programming syntax. This diversity is what makes models generalise to arbitrary prompts.
 
 ### The Fixed Validation Set
 
@@ -54,9 +54,9 @@ Each `.bin` file stores pre-tokenized FineWeb:
 ┌──────────────────────────────────────────────────────────┐
 │  HEADER: 256 × int32  (1024 bytes total)                 │
 │    [0]  = 20240520   ← magic number (file identification)│
-│    [1]  = 1          ← version                          │
-│    [2]  = N          ← number of tokens in this file    │
-│    [3..255] = 0      ← reserved padding                 │
+│    [1]  = 1          ← version                           │
+│    [2]  = N          ← number of tokens in this file     │
+│    [3..255] = 0      ← reserved padding                  │
 ├──────────────────────────────────────────────────────────┤
 │  DATA:  N × uint16   (2 bytes per token ID, range 0–1023)│
 └──────────────────────────────────────────────────────────┘
@@ -73,7 +73,7 @@ python3 data/cached_challenge_fineweb.py --variant sp1024 --train-shards 4
 python3 data/cached_challenge_fineweb.py --variant sp1024 --check
 ```
 
-This fetches pre-tokenized shards from `kevclark/parameter-golf` on HuggingFace — the official mirror maintained by OpenAI. No tokenization step needed.
+This fetches pre-tokenized shards from `kevclark/parameter-golf` on HuggingFace - the official mirror maintained by OpenAI. No tokenization step needed.
 
 ---
 
@@ -81,7 +81,7 @@ This fetches pre-tokenized shards from `kevclark/parameter-golf` on HuggingFace 
 
 ### What is Tokenization?
 
-Language models cannot process raw text — they operate on integers. The tokenizer converts text to **token IDs** (integers) and back. A vocabulary of size V means all text is expressed using only V distinct symbols.
+Language models cannot process raw text - they operate on integers. The tokenizer converts text to **token IDs** (integers) and back. A vocabulary of size V means all text is expressed using only V distinct symbols.
 
 **BPE (Byte Pair Encoding)** builds the vocabulary by:
 1. Starting with all individual bytes (256 initial tokens)
@@ -90,24 +90,24 @@ Language models cannot process raw text — they operate on integers. The tokeni
 
 ### The SP1024 Tokenizer
 
-This run uses `fineweb_1024_bpe.model` — a SentencePiece BPE tokenizer with **1024 tokens**, trained specifically on FineWeb.
+This run uses `fineweb_1024_bpe.model` - a SentencePiece BPE tokenizer with **1024 tokens**, trained specifically on FineWeb.
 
 ```
 "artificial intelligence" → [842, 71, 318, 892]
 "The history"             → [256, 183, 847]
 ```
 
-With 1024 tokens, each token covers roughly **1.5 bytes** of English text on average. Common words are single tokens; rare words split into multiple sub-word pieces. This low vocabulary is intentional — it keeps the embedding matrix small enough to fit in the 16 MB artifact limit.
+With 1024 tokens, each token covers roughly **1.5 bytes** of English text on average. Common words are single tokens; rare words split into multiple sub-word pieces. This low vocabulary is intentional - it keeps the embedding matrix small enough to fit in the 16 MB artifact limit.
 
 **Why 1024 instead of 32,000 (GPT-4) or 100K (LLaMA-3)?** Smaller vocabulary = smaller embedding matrix = fewer parameters = more room for transformer depth within the size budget.
 
 ---
 
-## 3. Model Architecture — Complete Component Guide
+## 3. Model Architecture - Complete Component Guide
 
 ### High-Level Structure
 
-The model is a **decoder-only transformer** — the same family as GPT-2, GPT-3, GPT-4, LLaMA-3, Claude, and Gemma. It reads a sequence of token IDs and predicts the probability distribution over the next token at every position simultaneously.
+The model is a **decoder-only transformer** - the same family as GPT-2, GPT-3, GPT-4, LLaMA-3, Claude, and Gemma. It reads a sequence of token IDs and predicts the probability distribution over the next token at every position simultaneously.
 
 ```
                     ╔══════════════════════════════════════════╗
@@ -118,8 +118,8 @@ The model is a **decoder-only transformer** — the same family as GPT-2, GPT-3,
 
                               │
                     ┌─────────▼─────────┐
-                    │  Token Embedding   │   1024 vocab × 384 dims
-                    │  (lookup table)    │   shape: (B × T × 384)
+                    │  Token Embedding  │   1024 vocab × 384 dims
+                    │  (lookup table)   │   shape: (B × T × 384)
                     └─────────┬─────────┘
                               │
                     ┌─────────▼─────────┐
@@ -128,12 +128,12 @@ The model is a **decoder-only transformer** — the same family as GPT-2, GPT-3,
                     └─────────┬─────────┘
                               │
             ┌─────────────────▼──────────────────┐
-            │         TRANSFORMER BLOCK           │  repeated × 8
-            │  ┌──────────────────────────────┐  │
-            │  │ 1. RMSNorm (pre-norm)        │  │
-            │  │    scale: 384 learnable params│  │
-            │  └──────────────┬───────────────┘  │
-            │                 │                   │
+            │         TRANSFORMER BLOCK          │  repeated × 8
+            │  ┌───────────────────────────────┐ │
+            │  │ 1. RMSNorm (pre-norm)         │ │
+            │  │    scale: 384 learnable params│ │
+            │  └──────────────┬────────────────┘ │
+            │                 │                  │
             │  ┌──────────────▼───────────────┐  │
             │  │ 2. Grouped Query Attention   │  │
             │  │    Q-proj: 384→384  147K prm │  │
@@ -144,20 +144,20 @@ The model is a **decoder-only transformer** — the same family as GPT-2, GPT-3,
             │  │    + Partial RoPE (32 dims)  │  │
             │  │    + FlashAttention-3        │  │
             │  └──────────────┬───────────────┘  │
-            │                 │                   │
-            │        x = x + attn_output          │  ← residual
-            │                 │                   │
+            │                 │                  │
+            │        x = x + attn_output         │  ← residual
+            │                 │                  │
             │  ┌──────────────▼───────────────┐  │
             │  │ 3. RMSNorm (pre-norm)        │  │
             │  └──────────────┬───────────────┘  │
-            │                 │                   │
+            │                 │                  │
             │  ┌──────────────▼───────────────┐  │
-            │  │ 4. SwiGLU MLP               │  │
-            │  │    gate+up: 384→3072 1.18M p│  │
-            │  │    down:   1536→384   590K p│  │
+            │  │ 4. SwiGLU MLP                │  │
+            │  │    gate+up: 384→3072 1.18M p │  │
+            │  │    down:   1536→384   590K p │  │
             │  └──────────────┬───────────────┘  │
-            │                 │                   │
-            │         x = x + mlp_output          │  ← residual
+            │                 │                  │
+            │         x = x + mlp_output         │  ← residual
             └─────────────────┬──────────────────┘
                               │
                     ┌─────────▼─────────┐
@@ -185,11 +185,11 @@ The embedding layer is a lookup table: each of the 1024 token IDs maps to a lear
 Parameter count: 1024 × 384 = 393,216 parameters
 ```
 
-**Tied embeddings:** The same weight matrix is used for both input lookup (embedding) and output projection (`F.linear(hidden, emb_weight)`). This saves 393,216 parameters at no quality cost. The input and output spaces are naturally aligned — what the model "means" by token 42 going in is the same as what it means going out.
+**Tied embeddings:** The same weight matrix is used for both input lookup (embedding) and output projection (`F.linear(hidden, emb_weight)`). This saves 393,216 parameters at no quality cost. The input and output spaces are naturally aligned - what the model "means" by token 42 going in is the same as what it means going out.
 
 **Why normalise embeddings at startup?** `F.rms_norm` is applied to the raw looked-up embeddings before the first transformer block. This prevents large variation in embedding norms (which vary across vocabulary items) from destabilising the first layer.
 
-### 3.2 RMSNorm — Root Mean Square Normalisation
+### 3.2 RMSNorm - Root Mean Square Normalisation
 
 Applied before every sublayer (pre-norm style). Formula:
 
@@ -206,7 +206,7 @@ where `scale` is a learnable vector of shape `(dim,)`.
 | Parameters | 2 × dim (scale + bias) | 1 × dim (scale only) |
 | Speed | baseline | ~10% faster |
 
-The mean subtraction in LayerNorm turns out to be unnecessary for training stability — the scale parameter does the important work.
+The mean subtraction in LayerNorm turns out to be unnecessary for training stability - the scale parameter does the important work.
 
 **Pre-norm vs post-norm:** Pre-norm (normalise before the sublayer) provides better gradient flow through deep networks and is used in all modern LLMs.
 
@@ -248,7 +248,7 @@ Attention params per layer:           442,368
 
 Before applying RoPE, both Q and K are RMS-normalised per head. This prevents attention logits from growing unboundedly, a known source of instability in models trained at higher precision or with aggressive learning rates. Used in Google's PaLM-2 and the parameter-golf SOTA.
 
-#### RoPE — Rotary Position Embeddings
+#### RoPE - Rotary Position Embeddings
 
 Traditional transformers add learned position embeddings to token embeddings. **RoPE** instead rotates Q and K vectors by a position-dependent angle, so the dot product between positions i and j encodes only their *relative* distance (i − j).
 
@@ -295,7 +295,7 @@ Dimensions:
 
 Every sublayer (attention and MLP) uses `x = x + sublayer(norm(x))`. This provides:
 1. Direct gradient paths during backpropagation (prevents vanishing gradients in deep networks)
-2. An "identity shortcut" — early in training when sublayers are random noise, the residual stream passes information cleanly through
+2. An "identity shortcut" - early in training when sublayers are random noise, the residual stream passes information cleanly through
 
 Without residual connections, transformers deeper than ~4 layers become effectively untrainable.
 
@@ -309,13 +309,13 @@ logit_final = 30 × tanh(logit / 30)
 
 This clips all values into (−30, +30). Without this, logits can grow to extreme values during training, causing extremely peaked distributions that make training unstable (near-infinite gradients from softmax). Used in Gemma and the parameter-golf SOTA.
 
-### 3.7 EMA — Exponential Moving Average of Weights
+### 3.7 EMA - Exponential Moving Average of Weights
 
 ```
 ema_weight = 0.999 × ema_weight + 0.001 × current_weight
 ```
 
-Instead of using the final training step's weights, a running average is maintained throughout training. The **final checkpoint uses EMA weights**, not the last-step weights. This provides ~0.002–0.005 val_bpb improvement at zero training cost — the EMA trajectory is smoother and converges to a flatter minimum, which also quantizes better (important for the 16 MB limit).
+Instead of using the final training step's weights, a running average is maintained throughout training. The **final checkpoint uses EMA weights**, not the last-step weights. This provides ~0.002–0.005 val_bpb improvement at zero training cost - the EMA trajectory is smoother and converges to a flatter minimum, which also quantizes better (important for the 16 MB limit).
 
 ### 3.8 Parameter Count Summary
 
@@ -398,7 +398,7 @@ torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
 If the L2 norm of all gradients exceeds 1.0, they are scaled down proportionally. This prevents rare "gradient explosions" (caused by unusual training examples) from making extreme weight updates. In this run: 2 clipping events in 1307 steps — both during LR warmup. Healthy training has <5% clipping rate.
 
-### 4.4 Mixed Precision Training — BF16
+### 4.4 Mixed Precision Training - BF16
 
 ```
 FP32:  1 sign + 8 exponent + 23 mantissa = 32 bits  (full precision)
@@ -408,7 +408,7 @@ FP16:  1 sign + 5 exponent + 10 mantissa = 16 bits  (different: narrower range)
 
 All forward and backward passes use BF16 via `torch.autocast`. BF16 has the same dynamic range as FP32 (same exponent bits) but less precision — acceptable for neural network training because gradient variance dominates anyway. Benefits: 2× less GPU memory, 2–4× higher throughput on tensor cores.
 
-### 4.5 Learning Rate Schedule — Trapezoidal
+### 4.5 Learning Rate Schedule - Trapezoidal
 
 ```
 Learning Rate
@@ -427,7 +427,7 @@ Learning Rate
 
 - **Warmup (0→100):** LR rises linearly. Prevents large destructive updates when weights are initialised randomly.
 - **Constant (100→1210):** Maximum learning rate, fastest learning.
-- **Warmdown (1210→1307):** LR decays toward 0. Encourages convergence to a flat minimum — important for quantization-robustness (flatter minima maintain quality under low-bit compression).
+- **Warmdown (1210→1307):** LR decays toward 0. Encourages convergence to a flat minimum - important for quantization-robustness (flatter minima maintain quality under low-bit compression).
 
 ---
 
@@ -437,11 +437,11 @@ Learning Rate
 
 AdamW (Adam with decoupled Weight decay) adapts the learning rate per parameter using estimates of first and second gradient moments. It's the standard optimizer for most deep learning.
 
-### Muon — Momentum Orthogonalized by Newton-Schulz
+### Muon - Momentum Orthogonalized by Newton-Schulz
 
-**Muon** (Keller Jordan, 2024) is used for all 2D weight matrices (Q/K/V/O projections, MLP weights) — 17.69M out of 18.10M parameters.
+**Muon** (Keller Jordan, 2024) is used for all 2D weight matrices (Q/K/V/O projections, MLP weights) - 17.69M out of 18.10M parameters.
 
-**Core idea:** Instead of updating weights in the raw gradient direction, orthogonalize the gradient update first so all singular values become 1. This means every direction in weight space gets an equal-magnitude update — no direction dominates.
+**Core idea:** Instead of updating weights in the raw gradient direction, orthogonalize the gradient update first so all singular values become 1. This means every direction in weight space gets an equal-magnitude update - no direction dominates.
 
 ```
 Step 1: Nesterov momentum
@@ -467,17 +467,17 @@ for _ in range(5):               # 5 iterations sufficient
 # X now has all singular values ≈ 1
 ```
 
-**Why this works:** Standard gradient descent under Euclidean norm treats all parameter dimensions equally by magnitude. Muon's orthogonalized update treats all *directions* equally by the spectral norm — a more natural norm for weight matrices that encode transformations. Empirically converges ~35% faster than AdamW for transformer weight matrices.
+**Why this works:** Standard gradient descent under Euclidean norm treats all parameter dimensions equally by magnitude. Muon's orthogonalized update treats all *directions* equally by the spectral norm - a more natural norm for weight matrices that encode transformations. Empirically converges ~35% faster than AdamW for transformer weight matrices.
 
 **AdamW is still used** for embeddings and RMSNorm scales (1D parameters, or parameters where orthogonalization doesn't make geometric sense).
 
 ---
 
-## 6. Evaluation Metric — val_bpb
+## 6. Evaluation Metric - val_bpb
 
 ### What is val_bpb?
 
-**val_bpb = validation bits per byte** — how many bits the model needs to encode each byte of the validation text. This is a tokenizer-agnostic compression quality metric. Lower is always better.
+**val_bpb = validation bits per byte** - how many bits the model needs to encode each byte of the validation text. This is a tokenizer-agnostic compression quality metric. Lower is always better.
 
 ### Derivation from Cross-Entropy Loss
 
@@ -494,7 +494,7 @@ val_bpb = (loss_nats / ln 2) × (tokens_scored / bytes_in_those_tokens)
         = loss_bits × (tokens/bytes)
 ```
 
-The `tokens/bytes` factor accounts for tokenizer efficiency — a model using a 1024-vocab tokenizer and one using a 32000-vocab tokenizer can produce the same val_bpb if they compress text equally well, even though their raw losses differ.
+The `tokens/bytes` factor accounts for tokenizer efficiency - a model using a 1024-vocab tokenizer and one using a 32000-vocab tokenizer can produce the same val_bpb if they compress text equally well, even though their raw losses differ.
 
 ### Reference Scale
 
@@ -508,7 +508,7 @@ The `tokens/bytes` factor accounts for tokenizer efficiency — a model using a 
 | 1.5–2.0 | Deep grammar, factual associations |
 | 1.224 | OpenAI param-golf naive baseline (8×H100, 10min) |
 | **1.081** | **Parameter-golf SOTA (Apr 2026)** |
-| ~1.0 | Shannon entropy of English — theoretical minimum |
+| ~1.0 | Shannon entropy of English - theoretical minimum |
 
 ### Sliding Window Evaluation
 
@@ -561,7 +561,7 @@ train(cfg)
   │       18.10M parameters
   │
   ├── 7. compiled_model = model
-  │       (torch.compile skipped — hung on MIG slice)
+  │       (torch.compile skipped - hung on MIG slice)
   │
   ├── 8. Setup optimizers
   │       matrix_params → Muon(lr=3e-3, momentum=0.95, ns_steps=5)
@@ -663,7 +663,7 @@ print(f"val_bpb: {ckpt['val_bpb']:.4f}")
 
 ### Autoregressive Generation
 
-The `generate()` function in `inference.py` implements autoregressive decoding — the same method used by ChatGPT, Claude, and every GPT-style model:
+The `generate()` function in `inference.py` implements autoregressive decoding - the same method used by ChatGPT, Claude, and every GPT-style model:
 
 ```
 1. Encode prompt: "The history of AI" → [183, 847, 71, 842]
@@ -708,7 +708,7 @@ Prompt:    "The history of artificial intelligence"
 Generated: "enceenceenceenceenceenceence..."
 ```
 
-This is **expected** for a model trained on only 42.8M tokens. Without a repetition penalty, small undertrained models loop on high-frequency token patterns. Despite the repetition, the model demonstrates real learning — "machine learning has → has also been" correctly captures a frequent English construction. For coherent generation, this model needs ~100–1000× more training.
+This is **expected** for a model trained on only 42.8M tokens. Without a repetition penalty, small undertrained models loop on high-frequency token patterns. Despite the repetition, the model demonstrates real learning - "machine learning has → has also been" correctly captures a frequent English construction. For coherent generation, this model needs ~100–1000× more training.
 
 ---
 
@@ -716,7 +716,7 @@ This is **expected** for a model trained on only 42.8M tokens. Without a repetit
 
 ### JSONL Log Format
 
-`logs/training_log_JOBID.jsonl` — one JSON object per line, written immediately (no buffering).
+`logs/training_log_JOBID.jsonl` - one JSON object per line, written immediately (no buffering).
 
 ```jsonl
 {"type":"header","note":"JSON Lines log. Each line is one metric event."}
@@ -763,10 +763,10 @@ python plot_training.py logs/training_log_JOBID.jsonl --out plots/run_JOBID --xa
 | Panel | What to look for | Healthy range |
 |-------|-----------------|---------------|
 | Loss (nats) | Monotonically decreasing train + val loss | Smooth downward, no NaN spikes |
-| val_bpb | Primary metric — lower is better | Steady decline throughout |
-| Throughput | Tokens/sec — ramps then plateaus | Steady ~98K tok/s on saxa |
-| MFU | % of peak FLOPS used | 40–55% is production quality |
-| Gradient Norm | L2 norm of all gradients | Stay 0.3–1.0, few spikes above 1.5 |
+| val_bpb | Primary metric - lower is better | Steady decline throughout |
+| Throughput | Tokens/sec - ramps then plateaus | Steady ~98K tok/s on saxa |
+| MFU | % of peak FLOPS used | 40-55% is production quality |
+| Gradient Norm | L2 norm of all gradients | Stay 0.3-1.0, few spikes above 1.5 |
 | LR Schedule | Three phases: warmup / constant / warmdown | Warmup completes, warmdown visible |
 
 ### Why .log Shows Everything at the End
@@ -780,18 +780,18 @@ The JSONL file is always written immediately and is always current.
 
 ---
 
-## 10. This Run — Complete Results Analysis
+## 10. This Run - Complete Results Analysis
 
 ### Run Specification
 
 | Parameter | Value |
 |-----------|-------|
 | Job ID | 2262656 |
-| Node | saxa — NVIDIA H200 MIG 1g.18gb |
+| Node | saxa - NVIDIA H200 MIG 1g.18gb |
 | Date | Thu 16 Apr 2026, 09:47–10:20 BST |
 | Model | 8L × 384d, 18.10M params, 36.2 MB (BF16) |
 | Tokenizer | SP1024 (1024 vocab) |
-| Dataset | FineWeb 10B — 4 train shards (400M tokens), val capped at 2M |
+| Dataset | FineWeb 10B - 4 train shards (400M tokens), val capped at 2M |
 | Batch | 32 seqs × 1024 tokens = 32,768 tokens/step |
 | torch.compile | Disabled (hung on MIG; see Known Issues) |
 
@@ -806,7 +806,7 @@ The JSONL file is always written immediately and is always current.
 | Average step time | ~334ms |
 | Tokens/sec (steady state) | ~98,116 |
 | MFU (Model FLOP Utilisation) | 48.4% of estimated 22 TFLOPS peak |
-| Gradient clipping events | 2 (steps 50 and 60 — normal during warmup) |
+| Gradient clipping events | 2 (steps 50 and 60 - normal during warmup) |
 
 ### val_bpb Progression
 
@@ -827,7 +827,7 @@ The JSONL file is always written immediately and is always current.
 | 1300 | 3.5683 | 30.0 min | −0.034 |
 | **Final (EMA)** | **3.5668** | 30.0 min | — |
 
-**Total val_bpb drop: 4.767 → 3.567 = 1.200 bpb in 30 minutes.** The rate of improvement is slowing but still positive — the model has not converged.
+**Total val_bpb drop: 4.767 → 3.567 = 1.200 bpb in 30 minutes.** The rate of improvement is slowing but still positive - the model has not converged.
 
 ### Critical Finding: Training Efficiency
 
@@ -855,7 +855,7 @@ For reference, GPT-2's smallest model (124M params) trained on 40B tokens achiev
 
 ---
 
-## 11. SOTA Comparison — Market Context
+## 11. SOTA Comparison - Market Context
 
 ### This Run vs Production Systems
 
@@ -870,7 +870,7 @@ For reference, GPT-2's smallest model (124M params) trained on 40B tokens achiev
 | GPT-4 (OpenAI, est.) | ~0.60† | ~1.8T (MoE) | ~13T | ~25K A100-days | months | Production |
 | Claude 3.5 (Anthropic, est.) | ~0.62† | unknown | unknown | TPU v4/v5 | months | Production |
 
-*† Approximate — different evaluation sets, not directly comparable to parameter-golf val_bpb.*
+*† Approximate - different evaluation sets, not directly comparable to parameter-golf val_bpb.*
 
 The difference between this run (3.567) and production models (~0.6) is almost entirely compute:
 
@@ -881,7 +881,7 @@ LLaMA-3 8B:     15T tokens   × 8B params    ≈ 7.2 × 10²³ FLOPs  (900M× mo
 GPT-4 (est.):   13T tokens   × ~1.8T params ≈ ~10²⁷ FLOPs       (10¹² × more)
 ```
 
-### Parameter-Golf Leaderboard — 4-Week Evolution
+### Parameter-Golf Leaderboard - 4-Week Evolution
 
 | Date | val_bpb | Key innovation |
 |------|---------|----------------|
@@ -898,7 +898,7 @@ GPT-4 (est.):   13T tokens   × ~1.8T params ≈ ~10²⁷ FLOPs       (10¹² ×
 |-----------|-------------|----------|
 | SP8192 tokenizer | 8× larger vocab → more efficient encoding | ~0.040 |
 | 3-layer depth recurrence | Re-use 3 layers 3× (17 virtual layers from 11 physical) | ~0.030 |
-| Parallel residuals (GPT-J style) | Attention + MLP run in parallel for layers 7–11 | ~0.015 |
+| Parallel residuals (GPT-J style) | Attention + MLP run in parallel for layers 7-11 | ~0.015 |
 | Full Hessian GPTQ int6 + Brotli | Optimal quantization using weight Hessian info | ~0.030 |
 | MuonEq-R | Row-normalised Muon optimizer | ~0.010 |
 | Score-first TTT | SGD on already-evaluated tokens during val (3 epochs/32K) | ~0.020 |
@@ -906,13 +906,13 @@ GPT-4 (est.):   13T tokens   × ~1.8T params ≈ ~10²⁷ FLOPs       (10¹² ×
 
 ### What Production Companies Use
 
-**OpenAI (ChatGPT, GPT-4o):** Transformer-based, likely MoE (Mixture of Experts — many specialized sub-networks, only a few activated per token). Training involves pretraining on ~13T tokens then RLHF (Reinforcement Learning from Human Feedback) fine-tuning for instruction following. Infrastructure: custom Microsoft Azure clusters with H100 GPUs.
+**OpenAI (ChatGPT, GPT-4o):** Transformer-based, likely MoE (Mixture of Experts - many specialized sub-networks, only a few activated per token). Training involves pretraining on ~13T tokens then RLHF (Reinforcement Learning from Human Feedback) fine-tuning for instruction following. Infrastructure: custom Microsoft Azure clusters with H100 GPUs.
 
 **Anthropic (Claude 3.5, Claude 4):** Dense (non-MoE) transformer with Constitutional AI (CAI) safety training layered on top of standard pretraining + RLHF. Infrastructure: AWS Trainium + Google TPU v5.
 
-**Meta AI (LLaMA-3):** Dense decoder-only transformer with the **same component choices as this model** — RMSNorm, GQA, RoPE, SwiGLU, tied embeddings — just 8B–70B parameters trained on 15T tokens on ~16,000 H100 GPUs. Fully open-source weights.
+**Meta AI (LLaMA-3):** Dense decoder-only transformer with the **same component choices as this model** - RMSNorm, GQA, RoPE, SwiGLU, tied embeddings - just 8B-70B parameters trained on 15T tokens on ~16,000 H100 GPUs. Fully open-source weights.
 
-**Google DeepMind (Gemma 2, Gemini):** Gemma 2 specifically uses the logit softcap (tanh×30) — **identical to this model**. Pretraining + instruction fine-tuning + safety tuning. Infrastructure: custom TPU v4/v5 clusters.
+**Google DeepMind (Gemma 2, Gemini):** Gemma 2 specifically uses the logit softcap (tanh×30) - **identical to this model**. Pretraining + instruction fine-tuning + safety tuning. Infrastructure: custom TPU v4/v5 clusters.
 
 **The architectural components in this teaching model** (RMSNorm, GQA, RoPE, SwiGLU, tied embeddings, logit softcap, EMA) are exactly the same components used by Meta, Google, and Mistral in their frontier open-source models. The only differences are scale and training compute.
 
@@ -927,7 +927,7 @@ GPT-4 (est.):   13T tokens   × ~1.8T params ≈ ~10²⁷ FLOPs       (10¹² ×
 | saxa | H200 MIG 1g.18gb | ~16 GB | Hopper SM 9.0 | 13.0 | 1/9 of full H200 |
 | damnii07–12 | RTX 2080 Ti | 11 GB | Turing SM 7.5 | 12.x | Full GPU |
 
-**MIG (Multi-Instance GPU):** NVIDIA technology that partitions a single GPU into isolated slices with guaranteed compute and memory resources. The saxa H200 has 9 MIG instances of profile `1g.18gb` — each gets 1/9 of the SMs (16 out of 144) and ~16 GB of HBM3 (High Bandwidth Memory 3).
+**MIG (Multi-Instance GPU):** NVIDIA technology that partitions a single GPU into isolated slices with guaranteed compute and memory resources. The saxa H200 has 9 MIG instances of profile `1g.18gb` - each gets 1/9 of the SMs (16 out of 144) and ~16 GB of HBM3 (High Bandwidth Memory 3).
 
 **Why torch.compile hung on MIG:** Triton JIT (Just-In-Time) kernel compilation is CPU-bound and requires significant compilation infrastructure. On a 1g.18gb MIG slice, both `fullgraph=True` and `dynamic=True` modes hung indefinitely (45+ minutes tested, no output). Resolution: skip compilation entirely. Despite this, the H200's HBM3 memory bandwidth provides 48.4% MFU in eager mode via the FlashAttention-3 backend in PyTorch SDPA.
 
@@ -938,7 +938,7 @@ GPT-4 (est.):   13T tokens   × ~1.8T params ≈ ~10²⁷ FLOPs       (10¹² ×
 | saxa MIG 1g.18gb | 32,768 | 16 GB VRAM |
 | damnii RTX 2080 Ti | 8,192 | 11 GB VRAM |
 
-### QoS (Quality of Service) Limits — Teaching Partition
+### QoS (Quality of Service) Limits - Teaching Partition
 
 From `sacctmgr show qos Teaching`:
 
@@ -976,7 +976,7 @@ sstat -j JOBID --format=JobID,AveCPU,AveRSS    # job resource usage
 srun -p Teaching -w saxa --gres gpu:1 --mem=32G -t 00:30:00 --pty bash  # interactive session
 ```
 
-**Critical: sbatch extra args don't reach Python.** Arguments after the script name go to the shell as `$1`, `$2` — NOT to the Python command:
+**Critical: sbatch extra args don't reach Python.** Arguments after the script name go to the shell as `$1`, `$2` - NOT to the Python command:
 
 ```bash
 # WRONG — --batch_tokens is silently ignored by Python:
@@ -1011,7 +1011,7 @@ python -u train_llm_scratch.py \
 
 **Root cause:** `get_cos_sin()` used `torch.cat([freqs, freqs])` creating `cos/sin` of shape `(1, T, 1, rope_dims=32)`, but `forward()` sliced `x1` to `(B, T, H, rope_dims/2=16)`. Last dim 32 ≠ 16.
 
-**Fix:** Removed `cat()` — return `freqs.cos()[None, :, None, :]` with shape `(1, T, 1, rope_dims/2)`.
+**Fix:** Removed `cat()` - return `freqs.cos()[None, :, None, :]` with shape `(1, T, 1, rope_dims/2)`.
 
 ### Bug 2 — `torch.compile(fullgraph=True)` hung for 45+ minutes
 
@@ -1027,7 +1027,7 @@ python -u train_llm_scratch.py \
 
 ### Bug 4 — Step-0 validation timed out (120+ min evaluation)
 
-**Symptom:** After data loading, training appeared to hang — actually running evaluation over 115M validation tokens with batch_size=1.
+**Symptom:** After data loading, training appeared to hang - actually running evaluation over 115M validation tokens with batch_size=1.
 
 **Fix:** Skip step-0 eval. Cap val tokens to 2M. Batch the sliding window loop (batch_seqs=32).
 
@@ -1105,14 +1105,14 @@ conda activate llm_training
 python -c "import torch, sentencepiece, numpy, matplotlib; print('OK')"
 ```
 
-### Step 1 — Download Data (from hastings or a compute node)
+### Step 1 - Download Data (from hastings or a compute node)
 
 ```bash
 cd ~/parameter-golf
 python3 data/cached_challenge_fineweb.py --variant sp1024 --train-shards 4
 ```
 
-### Step 2 — Smoke Test (2 min, confirms no crash)
+### Step 2 - Smoke Test (2 min, confirms no crash)
 
 ```bash
 # Get interactive session
@@ -1129,7 +1129,7 @@ python train_llm_scratch.py \
 exit
 ```
 
-### Step 3 — Full 30-Minute Training Run
+### Step 3 - Full 30-Minute Training Run
 
 ```bash
 # From hastings:
@@ -1139,7 +1139,7 @@ sbatch train_saxa.slurm
 tail -f logs/training_log_$(squeue -u $USER -h -o %i).jsonl
 ```
 
-### Step 4 — After Training
+### Step 4 - After Training
 
 ```bash
 # Run inference
